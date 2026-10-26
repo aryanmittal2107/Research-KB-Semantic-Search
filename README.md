@@ -1,12 +1,5 @@
 # Research KB — Research Paper Knowledge Base Search
 
-GitHub repository: https://github.com/aryanmittal2107/Research-KB-Semantic-Search
-
-## Included in this package
-- `sql/research_kb_setup_clean.sql` — PostgreSQL/pgvector setup script.
-- `docs/Research_Paper_Knowledge_Base_Schema_Updated.docx` — updated schema/design document.
-- `MASTER_PROMPT_FOR_TEAMMATE.md` — instructions for a teammate to inspect, set up, test, and continue the project.
-
 ## Requirements
 - PostgreSQL 17
 - pgvector extension compatible with your PostgreSQL installation
