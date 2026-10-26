@@ -1,334 +1,307 @@
-# Research KB — Internal Setup & Command Reference
+# Research KB — Research Paper Knowledge Base
 
-> Internal team reference. This file focuses on setup, execution, verification, and troubleshooting; it is not the Phase 2 submission report.
+Research KB is a PostgreSQL-based knowledge base designed to organize research papers and their related information in one structured database. It stores paper metadata, authors, topic tags, citation relationships, text chunks, and vector embeddings. The database design supports structured querying and provides the foundation for similarity-based retrieval using PostgreSQL and pgvector.
 
-## 1. Repository and working environment
+## Technology Stack
 
-Repository: `https://github.com/aryanmittal2107/Research-KB-Semantic-Search`
+- **PostgreSQL 17** — relational database for storing and querying research-paper data.
+- **pgvector** — PostgreSQL extension for storing vector embeddings and performing similarity queries.
+- **SQL** — schema definition, constraints, joins, views, indexes, functions, procedures, and triggers.
+- **psql** — command-line client used to connect to and manage the database.
+- **WSL Ubuntu + Windows PostgreSQL** — development environment used to access the local PostgreSQL server.
 
-Run Linux commands in **Ubuntu WSL**. Run Windows Credential Manager steps from Windows if GitHub authentication fails.
+## Features
 
-```bash
-cd ~/Research-KB-Semantic-Search
-pwd
-find . -maxdepth 3 -type f ! -path './.git/*' ! -path './.venv/*' | sort
-cat README.md
-```
+### 1. Research Paper Management
+The `papers` table stores the main information for each research paper, including its title, abstract, publication year, DOI, file path, uploader reference, and timestamps. This allows paper records to be queried and maintained centrally.
 
-If the repository has not been cloned into WSL:
+### 2. User and Uploader Records
+The `users` table stores user/uploader information. Paper records can reference the user who added them, helping associate uploaded or maintained papers with their source.
 
-```bash
-cd ~
-git clone https://github.com/aryanmittal2107/Research-KB-Semantic-Search.git
-cd Research-KB-Semantic-Search
-```
+### 3. Author Management and Relationships
+The `authors` table stores author information. The `paper_authors` junction table connects papers with authors and preserves author order. This supports papers with multiple authors and authors associated with multiple papers.
 
-If the remote repository is missing the latest local files because a push was rejected, do not assume a fresh clone contains the full teammate implementation. Compare the repository contents with the local project copy first.
+### 4. Topic Tags
+The `tags` table stores topic labels, while `paper_tags` connects tags to papers. This many-to-many relationship allows a paper to have multiple research topics and a topic to be associated with multiple papers.
 
-## 2. Identify the actual run instructions
+### 5. Citation Relationships
+The `paper_citations` table records relationships between citing and cited papers and can store citation context. The `citation_network` view exposes citation links together with paper information for easier inspection.
 
-Inspect the project files before installing dependencies. Use the matching section below only if that file exists.
+### 6. Text Chunk Storage
+The `paper_chunks` table stores portions of paper text, with fields for the paper reference and chunk number. Splitting text into chunks provides a data structure that can later support retrieval of relevant passages instead of returning only an entire paper record.
 
-```bash
-ls -la
-find . -maxdepth 2 -type f | sort
-```
+### 7. Vector Embedding Storage and Similarity Queries
+The `paper_chunks.embedding` column uses the pgvector type `vector(1536)`. PostgreSQL can compare stored vectors using pgvector operators, including `<=>` for cosine distance. An HNSW vector index is included to support efficient vector similarity retrieval.
 
-### If `requirements.txt` exists
+The current setup uses demo vectors to test vector storage and similarity-query mechanics. These demo vectors are not meaningful text embeddings, so they do not provide semantic understanding of the paper content.
 
-```bash
-python3 --version
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-```
+### 8. Views for Joined Information
+- **`paper_details`** — presents paper information together with uploader information, reducing the need to write the same join repeatedly.
+- **`citation_network`** — presents citation relationships along with paper titles for inspection.
 
-Exit the virtual environment when finished:
+### 9. Timestamp Maintenance
+The `update_paper_timestamp()` function and `trg_update_paper_timestamp` trigger update the paper's `updated_at` value when a paper record is updated. This helps track when paper metadata was last modified.
 
-```bash
-deactivate
-```
+### 10. Database Functions, Procedures, and Audit Logging
+Additional routines and audit objects were tested in the development database, including `count_paper_chunks()`, `count_paper_citations()`, `add_paper`, `delete_paper`, and a `paper_audit` table/trigger for recording paper changes. Their availability can vary by database setup because not all of these objects were included in the committed setup SQL. Check the live database using the inspection commands below before relying on them in a fresh installation.
 
-### If `pyproject.toml` exists
+## Database Schema
 
-Read its project instructions first:
+| Table / Object | Purpose |
+|---|---|
+| `users` | Stores user/uploader records. |
+| `papers` | Stores paper metadata, abstract, DOI, publication year, file path, uploader reference, and timestamps. |
+| `authors` | Stores author details. |
+| `paper_authors` | Links papers and authors, including author order. |
+| `tags` | Stores research-topic labels. |
+| `paper_tags` | Links papers and tags. |
+| `paper_citations` | Stores citing/cited paper relationships and citation context. |
+| `paper_chunks` | Stores paper text chunks and vector embeddings. |
+| `paper_details` | View joining paper details with uploader information. |
+| `citation_network` | View showing citation links and paper titles. |
+| HNSW vector index | Supports efficient vector similarity retrieval. |
+| `update_paper_timestamp()` | Sets `updated_at` when a paper is updated. |
+| `trg_update_paper_timestamp` | Calls the timestamp function before updates to `papers`. |
 
-```bash
-sed -n '1,240p' pyproject.toml
-```
+The setup SQL includes sample records for database testing. File paths stored in sample rows are metadata examples; the SQL script does not automatically include the corresponding PDF files.
 
-Install commands depend on the build tool and project configuration. Do not run both the `requirements.txt` and `pyproject.toml` workflows blindly.
+## Connect to the Existing Database
 
-### If a `.env.example` exists
-
-```bash
-cat .env.example
-```
-
-Copy it to `.env` only if the README or application expects it:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Fill in local values. Do not commit `.env`, database passwords, API keys, or tokens.
-
-## 3. PostgreSQL and pgvector checks
-
-Check the installed client and server versions:
+These commands are for the development setup where PostgreSQL 17 runs on Windows and is accessed from WSL Ubuntu.
 
 ```bash
-psql --version
-pg_config --version
+cd "/mnt/c/Program Files/PostgreSQL/17/bin"
+./psql.exe -U postgres -h localhost -p 5432 -d research_kb
 ```
 
-Check whether PostgreSQL is available in WSL (service commands depend on how it was installed):
-
-```bash
-sudo service postgresql status
-sudo service postgresql start
-```
-
-Connect to PostgreSQL as the local administrative role if that role exists:
-
-```bash
-sudo -u postgres psql
-```
-
-Inside `psql`, inspect databases and roles:
-
-```sql
-\l
-\du
-\q
-```
-
-If the database has not been created, create it only after confirming the setup SQL's expected database name and permissions. The known project database name used during development was `research_kb`.
-
-```bash
-sudo -u postgres createdb research_kb
-```
-
-If it already exists, this command will report that; do not drop the database just to rerun setup.
-
-Check pgvector availability inside the target database:
-
-```bash
-sudo -u postgres psql -d research_kb -c "SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';"
-```
-
-If the extension is not installed in the database, inspect the setup SQL and confirm the OS package/version before enabling it. The SQL commonly includes `CREATE EXTENSION IF NOT EXISTS vector;`; use the project's own setup script as the source of truth.
-
-## 4. Inspect and run the SQL setup
-
-The original SQL file in the repository was:
+Enter the PostgreSQL password when prompted. A successful connection displays a prompt similar to:
 
 ```text
-sql/research_kb_setup_clean.sql
+research_kb=#
 ```
 
-Inspect the beginning of the script before execution:
+### If the connection fails
 
-```bash
-sed -n '1,240p' sql/research_kb_setup_clean.sql
+Run these commands in **Windows PowerShell** to check the PostgreSQL service:
+
+```powershell
+Get-Service postgresql-x64-17
 ```
 
-Run the script against the intended database (the `-v ON_ERROR_STOP=1` option stops at the first SQL error):
+If it is stopped, open PowerShell as administrator if required and run:
 
-```bash
-sudo -u postgres psql -v ON_ERROR_STOP=1 -d research_kb -f sql/research_kb_setup_clean.sql
+```powershell
+Start-Service postgresql-x64-17
 ```
 
-If the script expects a different role or database, follow the script and README rather than forcing this command. Avoid rerunning destructive statements against a database containing data you need to keep.
+Then retry the WSL connection commands.
 
-Connect to the database:
+## Database Inspection and Query Commands
 
-```bash
-sudo -u postgres psql -d research_kb
-```
+Run the following commands after connecting and seeing the `research_kb=#` prompt. The commands beginning with a backslash are `psql` meta-commands; the others are SQL queries.
 
-Useful `psql` commands:
+### Check the database and pgvector
 
 ```sql
-\dt                 -- list tables
-\dv                 -- list views
-\df                 -- list functions
-\df+ *count*        -- inspect count-related functions
-\df+ *paper*        -- inspect paper-related functions
-\dp                 -- inspect table privileges
-\dx                 -- list installed extensions
-\q                  -- quit
+SELECT current_database();
+SELECT version();
+
+SELECT extname, extversion
+FROM pg_extension
+WHERE extname = 'vector';
 ```
 
-## 5. Verify the Phase 2 database routines
+### List database objects
 
-### List routine signatures
-
-Procedure signatures may differ between versions of the SQL, so inspect the actual argument list before calling a procedure.
-
-```sql
-SELECT n.nspname AS schema_name,
-       p.proname AS routine_name,
-       CASE p.prokind WHEN 'p' THEN 'PROCEDURE'
-                      WHEN 'f' THEN 'FUNCTION'
-                      ELSE p.prokind::text END AS routine_type,
-       pg_get_function_identity_arguments(p.oid) AS arguments,
-       pg_get_function_result(p.oid) AS result_type
-FROM pg_proc p
-JOIN pg_namespace n ON n.oid = p.pronamespace
-WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND p.proname IN (
-      'add_paper',
-      'delete_paper',
-      'count_paper_chunks',
-      'count_paper_citations',
-      'update_paper_timestamp',
-      'audit_paper_changes'
-  )
-ORDER BY routine_type, routine_name;
+```text
+\dt
+\dv
+\di
+\df
+\dx
 ```
 
-### Call the count functions
+- `\dt` lists tables.
+- `\dv` lists views.
+- `\di` lists indexes.
+- `\df` lists functions.
+- `\dx` lists installed extensions.
 
-Replace `1` with a valid `paper_id` from your database:
+### Inspect the table definitions
 
-```sql
-SELECT count_paper_chunks(1);
-SELECT count_paper_citations(1);
+```text
+\d users
+\d papers
+\d authors
+\d paper_authors
+\d tags
+\d paper_tags
+\d paper_citations
+\d paper_chunks
 ```
 
-Inspect paper IDs first:
+### Query paper records
 
 ```sql
-SELECT paper_id, title
+SELECT paper_id, title, abstract, publication_year, doi
 FROM papers
 ORDER BY paper_id;
 ```
 
-### Inspect audit rows
-
-First inspect the audit table's exact name and columns:
+### Query stored text chunks
 
 ```sql
-\dt *audit*
+SELECT chunk_id, paper_id, chunk_number, content
+FROM paper_chunks
+ORDER BY paper_id, chunk_number;
 ```
 
-Then query it using the table name shown by `\dt`, for example:
+### Query the views
 
 ```sql
-SELECT * FROM paper_audit ORDER BY 1 DESC LIMIT 20;
+SELECT * FROM paper_details;
+SELECT * FROM citation_network;
 ```
 
-If the audit table has a timestamp column, order by that column instead of `1`. Check its actual schema before assuming column names:
+### Run a vector similarity query
+
+This query compares each stored chunk vector with the vector for `chunk_id = 1`, then orders results by cosine distance. A lower distance means the vectors are closer according to the vector representation.
 
 ```sql
-\d paper_audit
+SELECT
+    chunk_id,
+    paper_id,
+    chunk_number,
+    content,
+    embedding <=> (
+        SELECT embedding
+        FROM paper_chunks
+        WHERE chunk_id = 1
+    ) AS cosine_distance
+FROM paper_chunks
+WHERE embedding IS NOT NULL
+ORDER BY cosine_distance
+LIMIT 5;
+```
+
+Because the current vectors are demo vectors, the result demonstrates how similarity queries work, not meaningful semantic relevance.
+
+### Inspect functions and procedures
+
+```sql
+SELECT
+    n.nspname AS schema_name,
+    p.proname AS routine_name,
+    CASE p.prokind
+        WHEN 'p' THEN 'PROCEDURE'
+        WHEN 'f' THEN 'FUNCTION'
+        ELSE p.prokind::text
+    END AS routine_type,
+    pg_get_function_identity_arguments(p.oid) AS arguments,
+    pg_get_function_result(p.oid) AS result_type
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+ORDER BY routine_type, routine_name;
 ```
 
 ### Inspect triggers
 
 ```sql
-SELECT event_object_table AS table_name,
-       trigger_name,
-       action_timing,
-       event_manipulation,
-       action_statement
+SELECT
+    event_object_table AS table_name,
+    trigger_name,
+    action_timing,
+    event_manipulation,
+    action_statement
 FROM information_schema.triggers
 WHERE trigger_schema = 'public'
 ORDER BY event_object_table, trigger_name, event_manipulation;
 ```
 
-If more than one trigger updates the same timestamp on the same table/event, inspect the definitions before removing or changing anything:
+### Check audit tables
 
-```sql
-SELECT pg_get_triggerdef(t.oid)
-FROM pg_trigger t
-JOIN pg_class c ON c.oid = t.tgrelid
-JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE NOT t.tgisinternal
-  AND n.nspname = 'public'
-ORDER BY c.relname, t.tgname;
+```text
+\dt *audit*
 ```
 
-### Safely test insert/update/delete and auditing
+### Exit psql
 
-Use a disposable test record and the procedure's real signature from the routine listing above. Do not guess arguments or reuse an existing paper ID. Record the test ID, verify the audit entries after each operation, and delete the test record only after confirming its dependencies. Audit rows should be checked separately because they may intentionally remain after a paper is deleted.
-
-## 6. Embeddings and semantic search
-
-The database schema previously documented a `vector(1536)` embedding column and an HNSW cosine-distance index. A vector query requires the query vector to have the same dimensionality as the stored vectors.
-
-The earlier SQL snapshot generated random demo vectors. These can test vector syntax/indexing, but they do **not** represent text meaning. For semantic search to be meaningful:
-1. Generate embeddings from each content chunk using the configured embedding model.
-2. Store those embeddings in `paper_chunks.embedding`.
-3. Generate the query embedding with the same model.
-4. Run nearest-neighbour search using the project's SQL/application implementation.
-
-Before changing the model or schema, inspect the teammate's current implementation and verify the model's output dimension against the actual column definition. Do not change `vector(1536)` to another size unless the whole ingestion and query pipeline uses that same size.
-
-Inspect the current column type:
-
-```sql
-SELECT table_name, column_name, data_type, udt_name
-FROM information_schema.columns
-WHERE table_schema = 'public'
-  AND table_name = 'paper_chunks'
-  AND column_name = 'embedding';
+```text
+\q
 ```
 
-## 7. Git commands
+## Setup from Scratch
 
-Check working tree and remote:
+Use this section only for a new or empty development environment. To access the existing database, use the connection commands above instead. Review the SQL setup file before running it and do not recreate a database that contains data you need.
+
+The setup script uses `psql` meta-commands such as `\gexec` and `\connect`, so run it through `psql` rather than pasting the entire file into a generic SQL editor. The PostgreSQL server must have pgvector installed.
+
+From the project folder in WSL, locate the setup script:
 
 ```bash
+cd "/mnt/c/Users/aryan/Downloads/Research Paper Internal Knowledge Base Search"
+find . -type f -name "research_kb_setup_clean.sql"
+```
+
+If the script is at `sql/research_kb_setup_clean.sql`, run:
+
+```bash
+SQL_FILE_WIN="$(wslpath -w "$PWD/sql/research_kb_setup_clean.sql")"
+"/mnt/c/Program Files/PostgreSQL/17/bin/psql.exe" \
+  -U postgres -h localhost -p 5432 -d postgres \
+  -v ON_ERROR_STOP=1 -f "$SQL_FILE_WIN"
+```
+
+If `find` reports that the file is nested inside `Research Paper Internal Knowledge Base Search/`, use:
+
+```bash
+SQL_FILE_WIN="$(wslpath -w "$PWD/Research Paper Internal Knowledge Base Search/research_kb_setup_clean.sql")"
+"/mnt/c/Program Files/PostgreSQL/17/bin/psql.exe" \
+  -U postgres -h localhost -p 5432 -d postgres \
+  -v ON_ERROR_STOP=1 -f "$SQL_FILE_WIN"
+```
+
+Use only the command that matches the path returned by `find`. The setup script is intended to run from the `postgres` maintenance database and conditionally creates/connects to `research_kb`.
+
+## Repository
+
+GitHub: [Research KB — Research Paper Internal Knowledge Base Search](https://github.com/aryanmittal2107/Research-KB-Semantic-Search)
+
+The repository includes the database setup SQL and schema documentation. The documented implementation is currently the database foundation; a complete web frontend/backend and an end-to-end real embedding-generation pipeline are not included in the database setup.
+
+## Git Workflow
+
+Run these commands from the local project repository folder to inspect its status:
+
+```bash
+cd "/mnt/c/Users/aryan/Downloads/Research Paper Internal Knowledge Base Search"
 git status
 git remote -v
 git branch --show-current
 git log --oneline -5
 ```
 
-After editing or adding files:
+Review changes before committing:
 
 ```bash
-git add README.md README_REFERENCE.md docs/Research_KB_Phase_2_Submission.pdf
+git diff
 git status
-git commit -m "Add Phase 2 submission report and setup reference"
-git push -u origin main
 ```
 
-If Git reports `nothing to commit`, do not create another commit unnecessarily.
-
-### GitHub 403: permission denied
-
-A message such as `Permission to aryanmittal2107/Research-KB-Semantic-Search.git denied to aniketrj45` means Git is authenticating as `aniketrj45` and that account does not currently have write access (or the collaborator invitation is not accepted).
-
-1. Confirm the repository owner has invited the exact GitHub account and that the invitation was accepted.
-2. On Windows, open **Credential Manager → Windows Credentials** and remove the relevant saved GitHub credential.
-3. Retry `git push -u origin main` and authenticate as the invited account through the available Git Credential Manager/browser flow.
-4. Never paste passwords, personal access tokens, or SSH private keys into chat or commit them to the repository.
-
-`git config user.name` and `git config user.email` set commit metadata; they do not change the GitHub account used for authentication.
-
-## 8. Troubleshooting quick reference
-
-| Symptom | Checks |
-|---|---|
-| `psql: command not found` | Install PostgreSQL client tools in WSL or use the intended environment. |
-| Connection refused | Check PostgreSQL service status and whether the server is running. |
-| Database does not exist | Confirm database name in the setup SQL/README; create it only if appropriate. |
-| `extension "vector" is not available` | pgvector OS package/server-version compatibility needs checking before `CREATE EXTENSION`. |
-| SQL script stops on an error | Read the first reported SQL error and line; fix the underlying cause before rerunning. |
-| Python module missing | Activate `.venv` and install dependencies from the repository's actual dependency file. |
-| Embedding dimension mismatch | Ensure model output dimensions equal the database vector column dimensions. |
-| Git push returns 403 | Check accepted collaborator access and clear stale Windows GitHub credentials. |
-
-## 9. Before a demo or submission
+Stage the intended project files and inspect the staged changes:
 
 ```bash
+git add README.md sql/ docs/
+git diff --cached
 git status
-git log --oneline -5
 ```
 
-Confirm the README's actual application startup command, run it in WSL, and capture a successful end-to-end test. Do not report the application as working until its current implementation has been run in the target environment.
+Commit and push:
+
+```bash
+git commit -m "Update Research KB README and documentation"
+git push
+```
+
+GitHub does not accept a normal account password for HTTPS Git operations. Use a supported credential manager, GitHub CLI, personal access token, or SSH authentication. Do not commit passwords, tokens, private SSH keys, `.env` files, or database dumps.
