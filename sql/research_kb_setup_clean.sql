@@ -1,3 +1,7 @@
+-- Research KB database setup: schema, pgvector, views, timestamp maintenance, audit logging, functions, and procedures.
+-- Run with psql from the postgres maintenance database on a new/development setup.
+-- Review before running against an existing database; sample rows are added idempotently.
+
 --
 
 -- 1. CREATE DATABASE
@@ -365,19 +369,187 @@ BEFORE UPDATE ON papers
 FOR EACH ROW
 EXECUTE FUNCTION update_paper_timestamp();
 
--- 25. TEST QUERIES
+-- 25. AUDIT LOG TABLE
+-- Stores paper insert/update/delete history.
+-- Column names match the current Research KB database.
+CREATE TABLE IF NOT EXISTS paper_audit (
+    audit_id BIGSERIAL PRIMARY KEY,
+    paper_id INT,
+    action_type VARCHAR(10) NOT NULL
+        CHECK (action_type IN ('INSERT', 'UPDATE', 'DELETE')),
+    old_title VARCHAR(300),
+    new_title VARCHAR(300),
+    changed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
+-- If an older setup created the JSONB-style audit schema, migrate it
+-- to the title-based schema used by the current project.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'paper_audit'
+          AND column_name = 'operation'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'paper_audit'
+          AND column_name = 'action_type'
+    ) THEN
+        ALTER TABLE public.paper_audit
+            ADD COLUMN action_type VARCHAR(10),
+            ADD COLUMN old_title VARCHAR(300),
+            ADD COLUMN new_title VARCHAR(300),
+            ADD COLUMN changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+        UPDATE public.paper_audit
+        SET action_type = operation,
+            old_title = old_data ->> 'title',
+            new_title = new_data ->> 'title',
+            changed_at = COALESCE(changed_at, CURRENT_TIMESTAMP);
+
+        ALTER TABLE public.paper_audit
+            ALTER COLUMN action_type SET NOT NULL;
+
+        ALTER TABLE public.paper_audit
+            ADD CONSTRAINT paper_audit_action_type_check
+            CHECK (action_type IN ('INSERT', 'UPDATE', 'DELETE'));
+
+        ALTER TABLE public.paper_audit
+            DROP COLUMN operation,
+            DROP COLUMN changed_by,
+            DROP COLUMN old_data,
+            DROP COLUMN new_data;
+    END IF;
+END;
+$$;
+
+-- 26. AUDIT TRIGGER FUNCTION
+CREATE OR REPLACE FUNCTION audit_paper_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        INSERT INTO public.paper_audit
+            (paper_id, action_type, old_title, new_title, changed_at)
+        VALUES
+            (NEW.paper_id, TG_OP, NULL, NEW.title, CURRENT_TIMESTAMP);
+        RETURN NEW;
+
+    ELSIF TG_OP = 'UPDATE' THEN
+        INSERT INTO public.paper_audit
+            (paper_id, action_type, old_title, new_title, changed_at)
+        VALUES
+            (NEW.paper_id, TG_OP, OLD.title, NEW.title, CURRENT_TIMESTAMP);
+        RETURN NEW;
+
+    ELSIF TG_OP = 'DELETE' THEN
+        INSERT INTO public.paper_audit
+            (paper_id, action_type, old_title, new_title, changed_at)
+        VALUES
+            (OLD.paper_id, TG_OP, OLD.title, NULL, CURRENT_TIMESTAMP);
+        RETURN OLD;
+    END IF;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 27. AUDIT TRIGGER
+DROP TRIGGER IF EXISTS trg_audit_paper_changes ON public.papers;
+CREATE TRIGGER trg_audit_paper_changes
+AFTER INSERT OR UPDATE OR DELETE ON public.papers
+FOR EACH ROW
+EXECUTE FUNCTION audit_paper_changes();
+
+-- 28. HELPER FUNCTIONS
+CREATE OR REPLACE FUNCTION count_paper_chunks(p_paper_id INT)
+RETURNS BIGINT AS $$
+    SELECT COUNT(*)
+    FROM paper_chunks
+    WHERE paper_id = p_paper_id;
+$$ LANGUAGE SQL STABLE;
+
+CREATE OR REPLACE FUNCTION count_paper_citations(p_paper_id INT)
+RETURNS BIGINT AS $$
+    SELECT COUNT(*)
+    FROM paper_citations
+    WHERE citing_paper_id = p_paper_id
+       OR cited_paper_id = p_paper_id;
+$$ LANGUAGE SQL STABLE;
+
+-- 29. PROCEDURE TO ADD A PAPER
+CREATE OR REPLACE PROCEDURE add_paper(
+    p_title VARCHAR(300),
+    p_abstract TEXT DEFAULT NULL,
+    p_publication_year INT DEFAULT NULL,
+    p_doi VARCHAR(255) DEFAULT NULL,
+    p_file_path TEXT DEFAULT NULL,
+    p_uploaded_by INT DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF p_title IS NULL OR btrim(p_title) = '' THEN
+        RAISE EXCEPTION 'Paper title cannot be empty';
+    END IF;
+
+    INSERT INTO papers
+        (title, abstract, publication_year, doi, file_path, uploaded_by)
+    VALUES
+        (p_title, p_abstract, p_publication_year, p_doi, p_file_path, p_uploaded_by);
+END;
+$$;
+
+-- 30. PROCEDURE TO DELETE A PAPER
+-- Related chunks, author links, tag links, and citation links are deleted
+-- by the existing ON DELETE CASCADE foreign-key rules.
+CREATE OR REPLACE PROCEDURE delete_paper(p_paper_id INT)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    DELETE FROM papers
+    WHERE paper_id = p_paper_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Paper with id % does not exist', p_paper_id;
+    END IF;
+END;
+$$;
+
+-- 31. ENSURE ONLY ONE TIMESTAMP TRIGGER
+-- Remove the redundant trigger seen in earlier development iterations.
+DROP TRIGGER IF EXISTS trg_papers_updated_at ON public.papers;
+DROP TRIGGER IF EXISTS trg_update_paper_timestamp ON public.papers;
+CREATE TRIGGER trg_update_paper_timestamp
+BEFORE UPDATE ON public.papers
+FOR EACH ROW
+EXECUTE FUNCTION update_paper_timestamp();
+
+-- 32. VERIFICATION QUERIES
+-- These queries display objects/data and do not insert test changes.
 \dt
+\dv
+\di
+\df
+\dp
 
 SELECT * FROM papers ORDER BY paper_id;
-
-SELECT chunk_id, paper_id, chunk_number, content
-FROM paper_chunks
-ORDER BY paper_id, chunk_number;
-
-SELECT * FROM paper_details;
-
+SELECT * FROM paper_details ORDER BY paper_id;
 SELECT * FROM citation_network;
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit ORDER BY audit_id DESC LIMIT 20;
+
+SELECT
+    paper_id,
+    title,
+    count_paper_chunks(paper_id) AS chunk_count,
+    count_paper_citations(paper_id) AS citation_count
+FROM papers
+ORDER BY paper_id;
 
 SELECT
     chunk_id,
@@ -394,6 +566,7 @@ WHERE embedding IS NOT NULL
 ORDER BY cosine_distance
 LIMIT 5;
 
+\d paper_audit
 \d paper_chunks
 
 -- END OF DATABASE SETUP
