@@ -849,7 +849,8 @@ CALL add_paper(
     NULL,
     NULL
 );
-
+```
+```sql 
 -- Verify that the paper was inserted
 SELECT paper_id, title, doi
 FROM papers
@@ -857,8 +858,8 @@ WHERE title = 'Temporary Audit Test Paper';
 
 -- Undo the test insertion
 ROLLBACK;
-
-
+```
+```sql
 -- ============================================
 -- TRANSACTION TEST 2: Test audit trigger
 -- ============================================
@@ -877,8 +878,8 @@ LIMIT 5;
 
 -- Undo the update and its audit entry
 ROLLBACK;
-
-
+```
+```sql
 -- ============================================
 -- TRANSACTION TEST 3: Test delete_paper()
 -- ============================================
