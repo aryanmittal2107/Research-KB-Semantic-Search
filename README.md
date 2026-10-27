@@ -849,8 +849,7 @@ CALL add_paper(
     NULL,
     NULL
 );
-```
-```sql 
+
 -- Verify that the paper was inserted
 SELECT paper_id, title, doi
 FROM papers
