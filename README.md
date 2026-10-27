@@ -836,10 +836,72 @@ ORDER BY p.proname;
 Transactions allow a group of SQL operations to be committed together or rolled back.
 
 ```sql
+-- ============================================
+-- TRANSACTION TEST 1: Test add_paper()
+-- ============================================
 BEGIN;
 
-SELECT COUNT(*) FROM papers;
+CALL add_paper(
+    'Temporary Audit Test Paper',
+    'Testing the add_paper procedure.',
+    2026,
+    '10.1234/test.temporary',
+    NULL,
+    NULL
+);
 
+-- Verify that the paper was inserted
+SELECT paper_id, title, doi
+FROM papers
+WHERE title = 'Temporary Audit Test Paper';
+
+-- Undo the test insertion
+ROLLBACK;
+
+
+-- ============================================
+-- TRANSACTION TEST 2: Test audit trigger
+-- ============================================
+BEGIN;
+
+UPDATE papers
+SET title = title || ' [AUDIT TEST]'
+WHERE paper_id = 1;
+
+-- Verify that the audit trigger recorded the update
+SELECT audit_id, paper_id, action_type,
+       old_title, new_title, changed_at
+FROM paper_audit
+ORDER BY audit_id DESC
+LIMIT 5;
+
+-- Undo the update and its audit entry
+ROLLBACK;
+
+
+-- ============================================
+-- TRANSACTION TEST 3: Test delete_paper()
+-- ============================================
+BEGIN;
+
+CALL add_paper(
+    'Temporary Delete Test Paper',
+    'Testing the delete_paper procedure.',
+    2026,
+    '10.1234/test.delete',
+    NULL,
+    NULL
+);
+
+-- Delete the temporary paper (ID 9 was used in our test)
+CALL delete_paper(9);
+
+-- Verify that the paper was deleted
+SELECT paper_id, title
+FROM papers
+WHERE doi = '10.1234/test.delete';
+
+-- Undo the test transaction
 ROLLBACK;
 ```
 
