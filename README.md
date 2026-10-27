@@ -558,48 +558,104 @@ ORDER BY p.proname;
 
 ## 10. Stored Procedure Commands
 
-The following examples modify data. Use a clearly identifiable test paper and remove it after testing.
+The following examples modify data. Run them while connected to the `research_kb` database. The procedure signature shown below is documentation, **not a SQL command to type by itself**. To execute the procedure, use `CALL`.
 
-### Add a paper
+### Confirm the installed procedure signature
 
 ```sql
-CALL add_paper(
-    'Research KB Procedure Demo',
-    'Temporary record created to test the add_paper procedure.',
+SELECT
+    p.proname AS procedure_name,
+    pg_get_function_identity_arguments(p.oid) AS arguments
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND p.proname = 'add_paper'
+  AND p.prokind = 'p';
+```
+
+The installed `public.add_paper` procedure accepts **five arguments**:
+
+```text
+add_paper(
+    p_title VARCHAR,
+    p_abstract TEXT,
+    p_year INTEGER,
+    p_doi VARCHAR,
+    p_uploaded_by INTEGER
+)
+```
+
+It does **not** accept a file-path argument. Although the `papers` table has a `file_path` column, this procedure does not populate it. Do not type the signature above as a command; it is only a description of the parameters.
+
+### Add a test paper
+
+The DOI column has a unique constraint. A previous test DOI (`10.5555/researchkb-demo-2026`) already exists in this database, so reusing it causes a duplicate-key error. To avoid collisions when testing, this example passes `NULL` for the optional DOI. PostgreSQL unique constraints allow multiple `NULL` values by default.
+
+```sql
+CALL public.add_paper(
+    'Research KB Procedure Demo'::VARCHAR,
+    'Temporary record created to test the add_paper procedure.'::TEXT,
     2026,
-    '10.5555/researchkb-demo-2026',
-    'papers/research_kb_procedure_demo.pdf',
-    NULL
+    NULL::VARCHAR,
+    NULL::INTEGER
 );
 ```
 
-Check whether it was inserted:
+If you run this insert more than once, the procedure may create multiple rows with the same title because title is not necessarily unique. Check the result immediately:
 
 ```sql
 SELECT paper_id, title, publication_year, doi
 FROM papers
-WHERE title = 'Research KB Procedure Demo';
+WHERE title = 'Research KB Procedure Demo'
+ORDER BY paper_id DESC;
 ```
 
-The DOI must be unique. If that DOI is already in use, choose a different test DOI.
+Check the audit record(s):
 
-### Delete a test paper using the procedure
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+WHERE new_title = 'Research KB Procedure Demo'
+ORDER BY audit_id DESC;
+```
 
-First identify the ID:
+If you want to provide a DOI, first check whether it is already in use:
 
 ```sql
 SELECT paper_id, title
 FROM papers
-WHERE title = 'Research KB Procedure Demo';
+WHERE doi = '10.5555/researchkb-demo-20261027';
 ```
 
-Then pass the returned ID to the procedure. Example only, if the ID is 99:
+Only use that DOI if the query returns zero rows; otherwise choose another unique DOI.
+
+### Delete a test paper using the procedure
+
+First identify the exact test row and its ID:
 
 ```sql
-CALL delete_paper(99);
+SELECT paper_id, title, doi
+FROM papers
+WHERE title = 'Research KB Procedure Demo'
+ORDER BY paper_id DESC;
 ```
 
-Do not use `99` unless it is actually the ID of the temporary test record. The procedure raises an exception if the paper ID does not exist.
+Use the `paper_id` of the test row you intend to delete. For example, only if the test row's actual ID is `99`:
+
+```sql
+CALL public.delete_paper(99);
+```
+
+**Do not copy `99` blindly.** Replace it with the actual ID returned by the query. The procedure raises an exception if the paper ID does not exist. After deletion, verify that the audit trigger recorded it:
+
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+WHERE paper_id = 99
+ORDER BY audit_id;
+```
+
+Replace `99` with the same test paper ID. The audit history should remain after the paper row is deleted.
 
 ## 11. Safe INSERT, UPDATE, and DELETE Demonstration
 
@@ -649,27 +705,15 @@ ORDER BY audit_id;
 
 **Important:** replace the example ID `7` with the ID returned by your own insert. Do not run these modification commands against an existing paper.
 
-## 12. Audit and Trigger Inspection
+## 12. Triggers
 
-List the latest audit records:
+A **trigger** is a database mechanism that automatically runs a trigger function when a specified event occurs on a table. In this project, triggers maintain the paper update timestamp and invoke audit logging. They do not need to be called manually.
 
-```sql
-SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
-FROM paper_audit
-ORDER BY audit_id DESC
-LIMIT 20;
-```
+### 12.1 Timestamp trigger
 
-Count audit events by action:
+`trg_update_paper_timestamp` runs **BEFORE UPDATE** on `public.papers` and invokes `update_paper_timestamp()`. The trigger function assigns the current timestamp to `NEW.updated_at`, so the timestamp is updated automatically whenever a paper row is changed.
 
-```sql
-SELECT action_type, COUNT(*) AS event_count
-FROM paper_audit
-GROUP BY action_type
-ORDER BY action_type;
-```
-
-List triggers on `papers`:
+Inspect the trigger and its definition:
 
 ```sql
 SELECT
@@ -683,13 +727,11 @@ WHERE trigger_schema = 'public'
 ORDER BY trigger_name, event_manipulation;
 ```
 
-Show trigger definitions and the functions they call:
-
 ```sql
 SELECT
     t.tgname AS trigger_name,
     pg_get_triggerdef(t.oid) AS trigger_definition,
-    p.proname AS function_name
+    p.proname AS trigger_function
 FROM pg_trigger t
 JOIN pg_class c ON c.oid = t.tgrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -700,9 +742,63 @@ WHERE n.nspname = 'public'
 ORDER BY t.tgname;
 ```
 
-Expected design: one `BEFORE UPDATE` timestamp trigger and one audit trigger configured for `AFTER INSERT`, `AFTER UPDATE`, and `AFTER DELETE`.
+Test timestamp maintenance using a disposable test row or an existing row only when it is safe to modify:
 
-## 13. Inspect All Functions and Procedures
+```sql
+SELECT paper_id, title, updated_at
+FROM papers
+ORDER BY paper_id
+LIMIT 5;
+```
+
+Insert/update/delete demonstrations using a temporary row are provided in Section 11. The expected design retains one timestamp trigger to avoid redundant timestamp updates.
+
+### 12.2 Audit trigger
+
+`trg_audit_paper_changes` is configured to run **AFTER INSERT, UPDATE, and DELETE** on `public.papers`. It invokes `audit_paper_changes()`, which writes an event to `paper_audit`.
+
+- On `INSERT`, the audit row records the new title.
+- On `UPDATE`, it records the old and new titles.
+- On `DELETE`, it records the deleted row's old title.
+
+PostgreSQL trigger variables used by the trigger function include `TG_OP` (the operation type), `NEW` (the new row for insert/update), and `OLD` (the prior or deleted row). Audit writes occur in the same transaction as the paper change; rolling back that transaction also rolls back the audit write.
+
+## 13. Audit Logging
+
+The `paper_audit` table is the history of changes made to `papers`. It stores the affected `paper_id`, `action_type`, `old_title`, `new_title`, and `changed_at`. The audit row remains after the paper itself is deleted because the audit history is stored separately.
+
+### View recent audit records
+
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+ORDER BY audit_id DESC
+LIMIT 20;
+```
+
+### Count events by operation
+
+```sql
+SELECT action_type, COUNT(*) AS event_count
+FROM paper_audit
+GROUP BY action_type
+ORDER BY action_type;
+```
+
+### View the history for one paper ID
+
+Use the actual ID of a paper or test record:
+
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+WHERE paper_id = 7
+ORDER BY audit_id;
+```
+
+Replace `7` with the relevant paper ID. For a deleted paper, its audit rows can still be queried using the saved ID.
+
+## 14. Inspect All Functions and Procedures
 
 ```sql
 SELECT
@@ -735,7 +831,7 @@ WHERE n.nspname = 'public'
 ORDER BY p.proname;
 ```
 
-## 14. Transaction Commands
+## 15. Transaction Commands
 
 Transactions allow a group of SQL operations to be committed together or rolled back.
 
@@ -749,7 +845,7 @@ ROLLBACK;
 
 `ROLLBACK` discards changes made in the current transaction. For a real insert/update/delete that should be retained, use `COMMIT` instead of `ROLLBACK`. Audit records created by a trigger are part of the same transaction as the paper change, so they are also rolled back if that transaction is rolled back.
 
-## 15. Setup from Scratch
+## 16. Setup from Scratch
 
 Use this only for a new or disposable development environment. The script creates the database if needed, connects to it, creates schema objects, inserts sample records, creates indexes/views/triggers/functions/procedures, and runs verification queries. It uses `psql` meta-commands such as `\gexec` and `\connect`; therefore, run it using `psql`, not by pasting the entire file into a generic SQL editor.
 
@@ -757,13 +853,13 @@ Find the setup file from the WSL project folder:
 
 ```bash
 cd "/mnt/c/Users/aryan/Downloads/Research Paper Internal Knowledge Base Search"
-find . -type f -name "Research_KB_Updated_Setup_With_Audit.sql"
+find . -type f -name "research_kb_setup_clean.sql"
 ```
 
 If the file is in the current folder, run:
 
 ```bash
-SQL_FILE_WIN="$(wslpath -w "$PWD/Research_KB_Updated_Setup_With_Audit.sql")"
+SQL_FILE_WIN="$(wslpath -w "$PWD/research_kb_setup_clean.sql")"
 "/mnt/c/Program Files/PostgreSQL/17/bin/psql.exe" \
   -U postgres -h localhost -p 5432 -d postgres \
   -v ON_ERROR_STOP=1 -f "$SQL_FILE_WIN"
@@ -773,7 +869,7 @@ Adjust the file path if `find` reports a different location. The server must hav
 
 **Do not run the complete setup script on the existing database without reviewing and backing up important data first.** It includes sample data and demo embeddings; it is not a dedicated incremental migration script.
 
-## 16. Git and GitHub Commands
+## 17. Git and GitHub Commands
 
 From the local project repository root:
 
