@@ -1,0 +1,175 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research KB | Knowledge Base</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand-icon">R</div>
+                <div>
+                    <h2>Research KB</h2>
+                    <p>Knowledge Base</p>
+                </div>
+            </div>
+
+            <p class="nav-label">WORKSPACE</p>
+            <nav>
+                <a class="nav-link active" href="#overview">◫ <span>Overview</span></a>
+                <a class="nav-link" href="#library">▤ <span>Paper Library</span></a>
+                <a class="nav-link" href="#search">⌕ <span>Semantic Search</span></a>
+                <a class="nav-link" href="#citations">⇄ <span>Citations</span></a>
+                <a class="nav-link" href="#audit">◷ <span>Audit History</span></a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-dot"></div>
+                <div>
+                    <strong>Research Workspace</strong>
+                    <p>PostgreSQL integration pending</p>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-content">
+            <header class="topbar">
+                <div>
+                    <p class="eyebrow">RESEARCH WORKSPACE</p>
+                    <h1>Knowledge Dashboard</h1>
+                </div>
+            </header>
+
+            <section id="overview" class="welcome">
+                <div>
+                    <p class="eyebrow light">YOUR RESEARCH, ORGANIZED</p>
+                    <h2>Discover knowledge.<br>Connect ideas.</h2>
+                    <p>Explore research papers and their connections in one place.</p>
+                    <a class="primary-button" href="#search">Explore research <span>→</span></a>
+                </div>
+                <div class="welcome-art" aria-hidden="true">
+                    <div class="orbit orbit-one"></div>
+                    <div class="orbit orbit-two"></div>
+                    <div class="art-document">
+                        <span>RESEARCH PAPER</span>
+                        <div></div><div></div><div></div>
+                        <div class="short-line"></div>
+                        <div class="art-seal">R</div>
+                    </div>
+                    <div class="floating-node node-one">AI</div>
+                    <div class="floating-node node-two">DB</div>
+                    <div class="floating-node node-three">↗</div>
+                </div>
+            </section>
+
+            <section class="stats-grid">
+                <article class="stat-card">
+                    <div class="stat-icon purple">▤</div>
+                    <p>Total Papers</p>
+                    <h3 id="total-papers">—</h3>
+                    <span>Connect database to load</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-icon blue">⌕</div>
+                    <p>Research Chunks</p>
+                    <h3 id="research-chunks">—</h3>
+                    <span>Connect database to load</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-icon green">⇄</div>
+                    <p>Citation Links</p>
+                    <h3 id="citation-links">—</h3>
+                    <span>Connect database to load</span>
+                </article>
+                <article class="stat-card">
+                    <div class="stat-icon orange">◷</div>
+                    <p>Audit Events</p>
+                    <h3 id="audit-events">—</h3>
+                    <span>Connect database to load</span>
+                </article>
+            </section>
+
+            <section id="search" class="panel search-panel">
+                <div>
+                    <p class="eyebrow">FIND SOMETHING NEW</p>
+                    <h2>Search your knowledge base</h2>
+                    <p>Search research by topic, title, or concept.</p>
+                </div>
+                <form id="search-form" class="search-form">
+                    <span>⌕</span>
+                    <input id="search-input" type="search"
+                           placeholder="Try “machine learning” or “database indexing”"
+                           aria-label="Search research papers">
+                    <button type="submit">Search</button>
+                </form>
+		<p id="search-message" class="search-message" role="status">
+                   Enter a topic to search your research database.
+		</p>
+		<div id="search-results" class="search-results"></div>
+
+            </section>
+
+            <section id="library" class="panel">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">YOUR COLLECTION</p>
+                        <h2>Paper Library</h2>
+                    </div>
+                    <span id="library-count" class="coming-soon">LOADING PAPERS...</span>
+                </div>
+
+                <div class="library-toolbar">
+                    <input
+                        type="search"
+                        id="paper-filter"
+                        class="library-search"
+                        placeholder="Search titles, abstracts, or DOI..."
+                        aria-label="Search research papers"
+                    />
+                </div>
+
+                <p id="library-message" class="library-message" role="status">
+                    Loading research papers from PostgreSQL...
+                </p>
+
+                <div id="paper-list" class="paper-list"></div>
+            </section>
+            <section id="citations" class="panel">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">RESEARCH CONNECTIONS</p>
+                        <h2>Citation Network</h2>
+                    </div>
+                </div>
+                <p class="section-description">
+                    Explore relationships between papers using the existing citation data.
+                    Live records will appear after database integration.
+                </p>
+            </section>
+
+            <section id="audit" class="panel">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">DATABASE ACTIVITY</p>
+                        <h2>Audit History</h2>
+                    </div>
+                </div>
+                <p class="section-description">
+                    Review recorded paper insertions, updates, and deletions from the
+                    paper_audit table once connected.
+                </p>
+            </section>
+
+            <footer>
+                Research KB <span>·</span> Research Paper / Internal Knowledge Base Search
+            </footer>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

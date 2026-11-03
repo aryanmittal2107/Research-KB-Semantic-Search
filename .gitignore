@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Environment variables and secrets
+.env
+
+# Flask
+instance/
+.webassets-cache/
+
+# Editor / OS
+.vscode/
+.DS_Store
+Thumbs.db
