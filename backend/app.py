@@ -1,15 +1,22 @@
 import os
+from pathlib import Path
+
 import psycopg
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
 from flask import Flask, jsonify, render_template, request
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(PROJECT_ROOT / "frontend" / "templates"),
+    static_folder=str(PROJECT_ROOT / "frontend" / "static"),
+)
+
 EMBEDDING_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 embedding_model = TextEmbedding(model_name=EMBEDDING_MODEL_NAME)
-
 def get_db_connection():
     return psycopg.connect(
         host=os.getenv("DB_HOST", "localhost"),

@@ -1,11 +1,12 @@
-
 import os
+from pathlib import Path
 
 import psycopg
 from dotenv import load_dotenv
 from fastembed import TextEmbedding
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
