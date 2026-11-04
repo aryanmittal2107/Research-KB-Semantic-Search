@@ -123,7 +123,94 @@ def list_papers():
             "error": "Unable to load research papers."
         }), 503
 
+@app.route("/api/citations")
+def list_citations():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        pc.citing_paper_id,
+                        citing.title AS citing_title,
+                        pc.cited_paper_id,
+                        cited.title AS cited_title,
+                        pc.citation_context,
+                        pc.created_at
+                    FROM paper_citations pc
+                    JOIN papers citing
+                        ON citing.paper_id = pc.citing_paper_id
+                    JOIN papers cited
+                        ON cited.paper_id = pc.cited_paper_id
+                    ORDER BY pc.created_at DESC;
+                """)
 
+                rows = cur.fetchall()
+
+        citations = [
+            {
+                "citing_paper_id": row[0],
+                "citing_title": row[1],
+                "cited_paper_id": row[2],
+                "cited_title": row[3],
+                "citation_context": row[4],
+                "created_at": row[5].isoformat() if row[5] else None,
+            }
+            for row in rows
+        ]
+
+        return jsonify({
+            "citations": citations,
+            "count": len(citations),
+        })
+
+    except psycopg.Error:
+        app.logger.exception("Citation query failed")
+        return jsonify({
+            "error": "Unable to load citation relationships."
+        }), 503
+
+@app.route("/api/audit")
+def list_audit_events():
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        audit_id,
+                        paper_id,
+                        action_type,
+                        old_title,
+                        new_title,
+                        changed_at
+                    FROM paper_audit
+                    ORDER BY changed_at DESC, audit_id DESC
+                    LIMIT 100;
+                """)
+
+                rows = cur.fetchall()
+
+        events = [
+            {
+                "audit_id": row[0],
+                "paper_id": row[1],
+                "action_type": row[2],
+                "old_title": row[3],
+                "new_title": row[4],
+                "changed_at": row[5].isoformat() if row[5] else None,
+            }
+            for row in rows
+        ]
+
+        return jsonify({
+            "events": events,
+            "count": len(events),
+        })
+
+    except psycopg.Error:
+        app.logger.exception("Audit history query failed")
+        return jsonify({
+            "error": "Unable to load audit history."
+        }), 503
 
 
 @app.route("/api/search")

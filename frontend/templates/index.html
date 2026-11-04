@@ -27,13 +27,13 @@
                 <a class="nav-link" href="#audit">◷ <span>Audit History</span></a>
             </nav>
 
-            <div class="sidebar-footer">
-                <div class="status-dot"></div>
-                <div>
-                    <strong>Research Workspace</strong>
-                    <p>PostgreSQL integration pending</p>
-                </div>
-            </div>
+                               <div class="sidebar-footer" id="database-status">
+                                         <div class="status-dot" id="database-status-dot"></div>
+                                         <div>
+                                                      <strong>Research Workspace</strong>
+                                                      <p id="database-status-text">Checking database connection...</p>
+                                         </div>
+                               </div>
         </aside>
 
         <main class="main-content">
@@ -146,9 +146,11 @@
                     </div>
                 </div>
                 <p class="section-description">
-                    Explore relationships between papers using the existing citation data.
-                    Live records will appear after database integration.
+                    Explore relationships between research papers using live citation records.
                 </p>
+                <div id="citation-list" class="data-list">
+                    Loading citation records...
+                </div>
             </section>
 
             <section id="audit" class="panel">
@@ -159,9 +161,11 @@
                     </div>
                 </div>
                 <p class="section-description">
-                    Review recorded paper insertions, updates, and deletions from the
-                    paper_audit table once connected.
+                    Review recorded paper insertions, updates, and deletions.
                 </p>
+                <div id="audit-list" class="data-list">
+                    Loading audit history...
+                </div>
             </section>
 
             <footer>

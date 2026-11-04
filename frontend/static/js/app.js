@@ -250,3 +250,122 @@ async function loadPaperLibrary() {
 }
 
 loadPaperLibrary();
+async function checkDatabaseHealth() {
+    const statusText = document.getElementById("database-status-text");
+    const statusDot = document.getElementById("database-status-dot");
+
+    try {
+        const response = await fetch("/api/health");
+        const health = await response.json();
+
+        if (!response.ok || health.connected !== true) {
+            throw new Error("Database unavailable");
+        }
+
+        statusText.textContent = "PostgreSQL connected";
+        statusDot.classList.add("connected");
+        statusDot.classList.remove("disconnected");
+
+    } catch (error) {
+        statusText.textContent = "PostgreSQL disconnected";
+        statusDot.classList.add("disconnected");
+        statusDot.classList.remove("connected");
+
+        console.error("Database health check failed:", error);
+    }
+}
+
+checkDatabaseHealth();
+setInterval(checkDatabaseHealth, 30000);
+
+async function loadCitations() {
+    const citationList = document.getElementById("citation-list");
+
+    if (!citationList) return;
+
+    try {
+        const response = await fetch("/api/citations");
+
+        if (!response.ok) {
+            throw new Error("Unable to load citations.");
+        }
+
+        const data = await response.json();
+        citationList.replaceChildren();
+
+        if (!data.citations || data.citations.length === 0) {
+            citationList.textContent = "No citation records found.";
+            return;
+        }
+
+        data.citations.forEach((citation) => {
+            const card = document.createElement("article");
+            card.className = "data-card";
+
+            const heading = document.createElement("h3");
+            heading.textContent =
+                citation.citing_title + " → " + citation.cited_title;
+
+            const context = document.createElement("p");
+            context.textContent =
+                citation.citation_context || "No citation context available.";
+
+            const metadata = document.createElement("p");
+            metadata.textContent =
+                `Paper ${citation.citing_paper_id} cites Paper ${citation.cited_paper_id}`;
+
+            card.append(heading, context, metadata);
+            citationList.appendChild(card);
+        });
+    } catch (error) {
+        console.error("Citation loading failed:", error);
+        citationList.textContent = "Unable to load citation records.";
+    }
+}
+
+async function loadAuditHistory() {
+    const auditList = document.getElementById("audit-list");
+
+    if (!auditList) return;
+
+    try {
+        const response = await fetch("/api/audit");
+
+        if (!response.ok) {
+            throw new Error("Unable to load audit history.");
+        }
+
+        const data = await response.json();
+        auditList.replaceChildren();
+
+        if (!data.events || data.events.length === 0) {
+            auditList.textContent = "No audit events recorded yet.";
+            return;
+        }
+
+        data.events.forEach((event) => {
+            const card = document.createElement("article");
+            card.className = "data-card";
+
+            const heading = document.createElement("h3");
+            heading.textContent = `${event.action_type} — ${event.new_title || event.old_title || "Paper record"}`;
+
+            const details = document.createElement("p");
+            details.textContent = `Paper ID: ${event.paper_id}`;
+
+            const timestamp = document.createElement("p");
+            timestamp.textContent = event.changed_at
+                ? new Date(event.changed_at).toLocaleString()
+                : "Time unavailable";
+
+            card.append(heading, details, timestamp);
+            auditList.appendChild(card);
+        });
+    } catch (error) {
+        console.error("Audit history loading failed:", error);
+        auditList.textContent = "Unable to load audit history.";
+    }
+}
+
+loadCitations();
+loadAuditHistory();

@@ -972,3 +972,144 @@ GitHub does not accept a normal account password for HTTPS Git operations. Use a
 GitHub: [Research KB — Research Paper Internal Knowledge Base Search](https://github.com/aryanmittal2107/Research-KB-Semantic-Search)
 
 The current repository documents the PostgreSQL database foundation. A complete web frontend/backend and a real end-to-end embedding-generation pipeline are not included in the SQL setup. The vector examples currently use random demo embeddings rather than semantically meaningful vectors.
+
+## Database Integration & Audit Trigger Testing
+
+### 1. Start PostgreSQL
+
+If PostgreSQL is running inside Ubuntu WSL, open PowerShell and run:
+
+```powershell
+wsl
+```
+
+Inside Ubuntu:
+
+```bash
+sudo service postgresql start
+pg_isready
+```
+
+Expected output:
+
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+### 2. Start the Flask Application
+
+Open PowerShell in the project root:
+
+```powershell
+.venv\Scripts\activate
+python backend\app.py
+```
+
+The application will be available at:
+
+```text
+http://127.0.0.1:5000
+```
+
+### 3. Test Backend API Endpoints
+
+Open a second PowerShell terminal and run:
+
+**Database health:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/api/health | ConvertTo-Json -Depth 5
+```
+
+**Dashboard statistics:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/api/stats | ConvertTo-Json -Depth 5
+```
+
+**Research paper library:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/api/papers | ConvertTo-Json -Depth 5
+```
+
+**Citation records:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/api/citations | ConvertTo-Json -Depth 5
+```
+
+**Audit history:**
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5000/api/audit | ConvertTo-Json -Depth 5
+```
+
+### 4. Test INSERT and DELETE Audit Triggers
+
+Connect to the PostgreSQL database from WSL:
+
+```bash
+sudo -u postgres psql -d research_kb
+```
+
+Insert a temporary research paper:
+
+```sql
+INSERT INTO papers (title, abstract, publication_year)
+VALUES (
+    'DBMS Audit Test Paper',
+    'Temporary paper created to test INSERT and DELETE audit triggers.',
+    2026
+)
+RETURNING paper_id, title;
+```
+
+Verify the INSERT audit event:
+
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+ORDER BY audit_id DESC
+LIMIT 5;
+```
+
+Delete the temporary paper:
+
+```sql
+DELETE FROM papers
+WHERE title = 'DBMS Audit Test Paper'
+RETURNING paper_id, title;
+```
+
+Verify both audit events:
+
+```sql
+SELECT audit_id, paper_id, action_type, old_title, new_title, changed_at
+FROM paper_audit
+ORDER BY audit_id DESC
+LIMIT 5;
+```
+
+**Expected result:**
+- An `INSERT` event containing the new paper title.
+- A `DELETE` event containing the old paper title.
+- Both events remain in `paper_audit` even after the paper is deleted.
+
+### 5. Verify the Dashboard
+
+Open:
+
+```text
+http://127.0.0.1:5000
+```
+
+Refresh using `Ctrl + F5`.
+
+Verify:
+- PostgreSQL connection status is displayed.
+- Research papers appear in the Paper Library.
+- Citation Network displays citation relationships.
+- Audit History displays INSERT and DELETE events.
+
+**Note:** Run the audit trigger test only with temporary test data. Do not delete actual research papers while testing.
