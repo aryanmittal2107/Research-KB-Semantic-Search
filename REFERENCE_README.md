@@ -1113,3 +1113,88 @@ Verify:
 - Audit History displays INSERT and DELETE events.
 
 **Note:** Run the audit trigger test only with temporary test data. Do not delete actual research papers while testing.
+
+## Live CRUD Operations Through PostgreSQL
+
+The Research KB application retrieves research-paper records from PostgreSQL through Flask API endpoints. The following SQL commands demonstrate how database changes can be made directly in PostgreSQL and reflected in the connected web application after refreshing the page.
+
+### 1. Connect to the database
+
+From PowerShell:
+
+```powershell
+wsl
+```
+
+Inside Ubuntu:
+
+```bash
+sudo -u postgres psql -d research_kb
+```
+
+### 2. INSERT a research paper
+
+```sql
+INSERT INTO papers (title, abstract, publication_year, doi)
+VALUES (
+    'Artificial Intelligence in Research Discovery',
+    'A study of AI techniques for improving research paper discovery and retrieval.',
+    2026,
+    '10.1000/demo.research.001'
+)
+RETURNING paper_id, title;
+```
+
+Save the returned `paper_id` for the next operations.
+
+### 3. UPDATE a research paper
+
+Replace `17` with the actual paper ID returned by the INSERT statement.
+
+```sql
+UPDATE papers
+SET
+    title = 'Advanced AI Techniques for Research Discovery',
+    abstract = 'An updated study of AI techniques for semantic research retrieval.'
+WHERE paper_id = 17
+RETURNING paper_id, title, updated_at;
+```
+
+The update timestamp trigger maintains the `updated_at` field, and the audit trigger records the old and new titles.
+
+### 4. DELETE a research paper
+
+Replace `17` with the temporary demonstration paper ID.
+
+```sql
+DELETE FROM papers
+WHERE paper_id = 17
+RETURNING paper_id, title;
+```
+
+The DELETE audit trigger records the deleted paper's previous title.
+
+### 5. Verify all audit operations
+
+```sql
+SELECT
+    audit_id,
+    paper_id,
+    action_type,
+    old_title,
+    new_title,
+    changed_at
+FROM paper_audit
+ORDER BY audit_id DESC
+LIMIT 10;
+```
+
+Expected actions: `INSERT`, `UPDATE`, and `DELETE`.
+
+### 6. Verify changes in the web application
+
+Open `http://127.0.0.1:5000` and refresh the dashboard.
+
+The Paper Library retrieves the current records from PostgreSQL. The Audit History retrieves the recorded operations from the `paper_audit` table.
+
+**Note:** These are direct PostgreSQL operations. The current Flask application exposes read APIs for displaying database records; it does not yet provide website-based CRUD forms or POST, PUT, and DELETE endpoints. Use temporary test records for demonstrations and avoid deleting actual research data.
